@@ -117,7 +117,7 @@
 
         // To lower canvas resolution on mobile devices to gain some
         // performance, uncomment the following line:
-        config.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);   // iPhone рендерит в 3x — ограничиваем 2x, чтобы не грелся
+        config.devicePixelRatio = Math.min(window.devicePixelRatio || 1, /iPhone|iPad|Android/i.test(navigator.userAgent) ? 1.5 : 2);   // на телефоне 1.5x: меньше пикселей — меньше нагрев   // iPhone рендерит в 3x — ограничиваем 2x, чтобы не грелся
 
 
       } else {
