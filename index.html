@@ -4,13 +4,16 @@
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Echo of the Sunder</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Echo">
     <meta name="theme-color" content="#1c0a28">
     <link rel="apple-touch-icon" href="TemplateData/apple-touch-icon.png">
-    <style>html,body{background:#000;}</style>
+    <style>html,body{background:#000;margin:0;overflow:hidden;}
+      /* iPhone: игра внутри безопасной зоны — полоса опыта не уходит под «полоску домой», HUD не под чёлкой */
+      #unity-container.unity-mobile{top:env(safe-area-inset-top);bottom:env(safe-area-inset-bottom);left:env(safe-area-inset-left);right:env(safe-area-inset-right);width:auto!important;height:auto!important;}</style>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
   </head>
@@ -110,7 +113,7 @@
 
         var meta = document.createElement('meta');
         meta.name = 'viewport';
-        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes, viewport-fit=cover';   // safe-area: см. стиль #unity-container
         document.getElementsByTagName('head')[0].appendChild(meta);
         document.querySelector("#unity-container").className = "unity-mobile";
         canvas.className = "unity-mobile";
@@ -141,6 +144,9 @@
             loadingContainer.style.display = "none";
           }
         }).then((unityInstance) => {
+                window.unityInstance = unityInstance;   // сохранение прогресса при сворачивании вкладки Safari (HC_Save)
+                document.addEventListener('visibilitychange', function () { if (document.hidden && window.unityInstance) window.unityInstance.SendMessage('HC_SAVE', 'OnVisibility', 'hidden'); });
+                window.addEventListener('pagehide', function () { if (window.unityInstance) window.unityInstance.SendMessage('HC_SAVE', 'OnVisibility', 'hidden'); });
                 document.querySelector("#unity-fullscreen-button").onclick = () => {
                   unityInstance.SetFullscreen(1);
                 };
