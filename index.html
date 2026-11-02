@@ -13,7 +13,9 @@
     <link rel="apple-touch-icon" href="TemplateData/apple-touch-icon.png">
     <style>html,body{background:#000;margin:0;overflow:hidden;}
       /* iPhone: игра внутри безопасной зоны — полоса опыта не уходит под «полоску домой», HUD не под чёлкой */
-      #unity-container.unity-mobile{top:env(safe-area-inset-top);bottom:env(safe-area-inset-bottom);left:env(safe-area-inset-left);right:env(safe-area-inset-right);width:auto!important;height:auto!important;}</style>
+      #unity-container.unity-mobile{top:env(safe-area-inset-top);bottom:env(safe-area-inset-bottom);left:env(safe-area-inset-left);right:env(safe-area-inset-right);width:auto!important;height:auto!important;}
+      /* v1.5: игра вертикальная — на широком экране (планшет, телефон боком) полоса 9:16 по центру, интерфейс не налезает */
+      #unity-container.unity-mobile.hc-pillar{left:calc(50% - var(--hc-w) / 2)!important;right:auto!important;width:var(--hc-w)!important;}</style>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
   </head>
@@ -67,7 +69,7 @@
       }
 
       var buildUrl = "Build";
-      var buildVer = "20261102221152";   // подставляет deploy_pages.sh: новая версия → браузер не берёт старую сборку из кэша
+      var buildVer = "20261102235028";   // подставляет deploy_pages.sh: новая версия → браузер не берёт старую сборку из кэша
       var loaderUrl = buildUrl + "/WebGL.loader.js?v=" + buildVer;
       var config = {
         arguments: [],
@@ -109,7 +111,7 @@
       // JS_FileSystem_Sync() behavior, but in future Unity version, this will be
       // expected to change.
 
-      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))) {   // iPadOS Safari называет себя Mac
         // Mobile device style: fill the whole browser client area with the game canvas:
 
         var meta = document.createElement('meta');
@@ -118,6 +120,13 @@
         document.getElementsByTagName('head')[0].appendChild(meta);
         document.querySelector("#unity-container").className = "unity-mobile";
         canvas.className = "unity-mobile";
+        // v1.5: широкий экран (планшет, телефон боком) — вертикальная полоса 9:16 по центру; интерфейс игры рассчитан на портрет
+        var hcFit = function () {
+          var c = document.querySelector("#unity-container"), w = window.innerWidth, h = window.innerHeight;
+          if (w / h > 0.62) { c.classList.add("hc-pillar"); c.style.setProperty("--hc-w", Math.round(h * 0.5625) + "px"); }
+          else c.classList.remove("hc-pillar");
+        };
+        hcFit(); window.addEventListener("resize", hcFit); window.addEventListener("orientationchange", function () { setTimeout(hcFit, 250); });
 
         // To lower canvas resolution on mobile devices to gain some
         // performance, uncomment the following line:
