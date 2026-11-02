@@ -67,7 +67,7 @@
       }
 
       var buildUrl = "Build";
-      var buildVer = "20261102163735";   // подставляет deploy_pages.sh: новая версия → браузер не берёт старую сборку из кэша
+      var buildVer = "20261102221152";   // подставляет deploy_pages.sh: новая версия → браузер не берёт старую сборку из кэша
       var loaderUrl = buildUrl + "/WebGL.loader.js?v=" + buildVer;
       var config = {
         arguments: [],
@@ -131,20 +131,74 @@
       }
 
 
+      // v1.4: GitHub не принимает файлы больше 100 МиБ, поэтому deploy_pages.sh режет WebGL.data.unityweb на части (.part0, .part1…)
+      // без потерь. Здесь части качаются, склеиваются в один Blob и кладутся в IndexedDB по версии сборки: повторный вход
+      // не качает заново (как кэш Unity). Unity получает обычный blob:-адрес; свой кэш для него Unity не ведёт (no-store).
+      var dataParts = 2;   // подставляет deploy_pages.sh
+      function hcIdb(fn) {
+        return new Promise(function (ok) {
+          try {
+            var rq = indexedDB.open("hc_data", 1);
+            rq.onupgradeneeded = function () { rq.result.createObjectStore("d"); };
+            rq.onsuccess = function () { try { fn(rq.result, ok); } catch (e) { ok(null); } };
+            rq.onerror = function () { ok(null); };
+          } catch (e) { ok(null); }
+        });
+      }
+      function hcData(onProgress) {
+        if (dataParts <= 1) return Promise.resolve(config.dataUrl);
+        var key = "data_" + buildVer;
+        return hcIdb(function (db, ok) {
+          var g = db.transaction("d").objectStore("d").get(key);
+          g.onsuccess = function () { ok(g.result || null); }; g.onerror = function () { ok(null); };
+        }).then(function (cached) {
+          if (cached && cached.size > 0) { onProgress(1); return cached; }
+          var got = [], size = [];
+          for (var i = 0; i < dataParts; i++) { got.push(0); size.push(0); }
+          function report() { var a = 0, b = 0; for (var i = 0; i < dataParts; i++) { a += got[i]; b += size[i] || 45e6; } onProgress(Math.min(1, a / b)); }
+          function part(i) {
+            return fetch(buildUrl + "/WebGL.data.unityweb.part" + i + "?v=" + buildVer).then(function (r) {
+              if (!r.ok) throw new Error("data part " + i + ": HTTP " + r.status);
+              size[i] = +r.headers.get("Content-Length") || 0;
+              if (!r.body || !r.body.getReader) return r.blob();
+              var rd = r.body.getReader(), chunks = [];
+              function pump() { return rd.read().then(function (s) { if (s.done) return new Blob(chunks); chunks.push(s.value); got[i] += s.value.length; report(); return pump(); }); }
+              return pump();
+            });
+          }
+          var jobs = []; for (var i = 0; i < dataParts; i++) jobs.push(part(i));
+          return Promise.all(jobs).then(function (blobs) {
+            var blob = new Blob(blobs, { type: "application/octet-stream" });
+            hcIdb(function (db, ok) {   // старые версии — вон, новая — в базу (ошибка квоты не мешает игре)
+              var tx = db.transaction("d", "readwrite"), st = tx.objectStore("d");
+              st.clear(); st.put(blob, key); tx.oncomplete = function () { ok(true); }; tx.onerror = function () { ok(false); };
+            });
+            return blob;
+          });
+        }).then(function (b) { return typeof b === "string" ? b : URL.createObjectURL(b); });
+      }
+      config.cacheControl = function (url) { return url.indexOf("blob:") === 0 ? "no-store" : "must-revalidate"; };
+
       var script = document.createElement("script");
       script.src = loaderUrl;
       script.onload = () => {
         const loadingContainer = document.querySelector("#unity-loading-container");
         const progressBarFull = document.querySelector("#unity-progress-bar-full");
+        const share = dataParts > 1 ? 0.9 : 0;   // доля полосы на скачивание частей данных
+        loadingContainer.style.display = "block";
 
-        createUnityInstance(canvas, config, (progress) => {
+        hcData(function (p) { progressBarFull.style.width = 100 * share * p + "%"; }).then(function (dataUrl) {
+          config.dataUrl = dataUrl;
+          return createUnityInstance(canvas, config, (progress) => {
           if (progress < 1) {
             loadingContainer.style.display = "block";
-            progressBarFull.style.width = 100 * progress + "%";
+            progressBarFull.style.width = 100 * (share + (1 - share) * progress) + "%";
           } else {
             loadingContainer.style.display = "none";
           }
+        });
         }).then((unityInstance) => {
+                if (config.dataUrl.indexOf("blob:") === 0) URL.revokeObjectURL(config.dataUrl);   // данные уже в памяти Unity
                 window.unityInstance = unityInstance;   // сохранение прогресса при сворачивании вкладки Safari (HC_Save)
                 document.addEventListener('visibilitychange', function () { if (document.hidden && window.unityInstance) window.unityInstance.SendMessage('HC_SAVE', 'OnVisibility', 'hidden'); });
                 window.addEventListener('pagehide', function () { if (window.unityInstance) window.unityInstance.SendMessage('HC_SAVE', 'OnVisibility', 'hidden'); });
