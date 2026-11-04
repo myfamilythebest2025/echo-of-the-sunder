@@ -69,7 +69,7 @@
       }
 
       var buildUrl = "Build";
-      var buildVer = "20261102235028";   // подставляет deploy_pages.sh: новая версия → браузер не берёт старую сборку из кэша
+      var buildVer = "20261104102806";   // подставляет deploy_pages.sh: новая версия → браузер не берёт старую сборку из кэша
       var loaderUrl = buildUrl + "/WebGL.loader.js?v=" + buildVer;
       var config = {
         arguments: [],
@@ -143,6 +143,13 @@
       // v1.4: GitHub не принимает файлы больше 100 МиБ, поэтому deploy_pages.sh режет WebGL.data.unityweb на части (.part0, .part1…)
       // без потерь. Здесь части качаются, склеиваются в один Blob и кладутся в IndexedDB по версии сборки: повторный вход
       // не качает заново (как кэш Unity). Unity получает обычный blob:-адрес; свой кэш для него Unity не ведёт (no-store).
+      // v1.5b: защита от вылетов. Флаг «игра идёт» ставится на старте и снимается при сворачивании/закрытии вкладки.
+      // Если при следующем запуске флаг остался — Safari выгрузил вкладку (обычно из-за памяти): игра снизит качество на ступень.
+      var hcCrashed = false;
+      try { hcCrashed = localStorage.getItem("hc_running") === "1"; localStorage.setItem("hc_running", "1"); } catch (e) {}
+      var hcRun = function (on) { try { localStorage.setItem("hc_running", on ? "1" : "0"); } catch (e) {} };
+      document.addEventListener("visibilitychange", function () { hcRun(!document.hidden); });
+      window.addEventListener("pagehide", function () { hcRun(false); });
       var dataParts = 2;   // подставляет deploy_pages.sh
       function hcIdb(fn) {
         return new Promise(function (ok) {
@@ -209,6 +216,7 @@
         }).then((unityInstance) => {
                 if (config.dataUrl.indexOf("blob:") === 0) URL.revokeObjectURL(config.dataUrl);   // данные уже в памяти Unity
                 window.unityInstance = unityInstance;   // сохранение прогресса при сворачивании вкладки Safari (HC_Save)
+                if (hcCrashed) setTimeout(function () { try { unityInstance.SendMessage('HC_SAVE', 'OnCrashRecovered', ''); } catch (e) {} }, 4000);   // v1.5b: прошлый запуск закрылся аварийно
                 document.addEventListener('visibilitychange', function () { if (document.hidden && window.unityInstance) window.unityInstance.SendMessage('HC_SAVE', 'OnVisibility', 'hidden'); });
                 window.addEventListener('pagehide', function () { if (window.unityInstance) window.unityInstance.SendMessage('HC_SAVE', 'OnVisibility', 'hidden'); });
                 document.querySelector("#unity-fullscreen-button").onclick = () => {
