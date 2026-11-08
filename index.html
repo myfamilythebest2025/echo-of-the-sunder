@@ -11,7 +11,7 @@
     <meta name="apple-mobile-web-app-title" content="Echo">
     <meta name="theme-color" content="#1c0a28">
     <link rel="apple-touch-icon" href="TemplateData/apple-touch-icon.png">
-    <style>html,body{background:#000;margin:0;overflow:hidden;}
+    <style>html,body{background:#0b0806;margin:0;overflow:hidden;}
       /* iPhone: игра внутри безопасной зоны — полоса опыта не уходит под «полоску домой», HUD не под чёлкой */
       #unity-container.unity-mobile{top:env(safe-area-inset-top);bottom:env(safe-area-inset-bottom);left:env(safe-area-inset-left);right:env(safe-area-inset-right);width:auto!important;height:auto!important;}
       /* v1.5: игра вертикальная — на широком экране (планшет, телефон боком) полоса 9:16 по центру, интерфейс не налезает */
@@ -69,7 +69,7 @@
       }
 
       var buildUrl = "Build";
-      var buildVer = "20261105001732";   // подставляет deploy_pages.sh: новая версия → браузер не берёт старую сборку из кэша
+      var buildVer = "20261108201446";   // подставляет deploy_pages.sh: новая версия → браузер не берёт старую сборку из кэша
       var loaderUrl = buildUrl + "/WebGL.loader.js?v=" + buildVer;
       var config = {
         arguments: [],
@@ -143,14 +143,23 @@
       // v1.4: GitHub не принимает файлы больше 100 МиБ, поэтому deploy_pages.sh режет WebGL.data.unityweb на части (.part0, .part1…)
       // без потерь. Здесь части качаются, склеиваются в один Blob и кладутся в IndexedDB по версии сборки: повторный вход
       // не качает заново (как кэш Unity). Unity получает обычный blob:-адрес; свой кэш для него Unity не ведёт (no-store).
-      // v1.5b: защита от вылетов. Флаг «игра идёт» ставится на старте и снимается при сворачивании/закрытии вкладки.
-      // Если при следующем запуске флаг остался — Safari выгрузил вкладку (обычно из-за памяти): игра снизит качество на ступень.
-      var hcCrashed = false;
-      try { hcCrashed = localStorage.getItem("hc_running") === "1"; localStorage.setItem("hc_running", "1"); } catch (e) {}
-      var hcRun = function (on) { try { localStorage.setItem("hc_running", on ? "1" : "0"); } catch (e) {} };
-      document.addEventListener("visibilitychange", function () { hcRun(!document.hidden); });
-      window.addEventListener("pagehide", function () { hcRun(false); });
-      var dataParts = 2;   // подставляет deploy_pages.sh
+      // v2.0 (СТАБИЛЬНОСТЬ): запись запуска localStorage "hc_run2" вместо флага hc_running (v1.5b). Флаг считал «вылетом» и выгрузку
+      // фоновой вкладки (iOS делает это при переключении приложений) — качество навсегда сползало до «Низкого».
+      // Прошлая запись → window.hcPrevRun (игра сама решит, был ли настоящий вылет: HC_PerfDiag.cs + HC_PerfDiag.jslib), новая — сразу
+      // «load» ДО скачивания данных: вылет во время скачивания/распаковки тоже виден. После старта игры запись ведёт HC_PerfDiag.jslib.
+      try { window.hcPrevRun = JSON.parse(localStorage.getItem("hc_run2") || "null"); } catch (e) { window.hcPrevRun = null; }
+      window.hcRun = { v: "", t0: Date.now(), beat: Date.now(), st: document.hidden ? "bg" : "load", bg: 0 };
+      var hcRunSave = function () { try { localStorage.setItem("hc_run2", JSON.stringify(window.hcRun)); } catch (e) {} };
+      hcRunSave();
+      try { localStorage.removeItem("hc_running"); } catch (e) {}
+      var hcLoading = function () { return !window.hcDiagHooked && window.hcRun.st !== "end"; };   // пока игра не взяла запись себе
+      var hcLoadBeat = setInterval(function () { if (!hcLoading()) { clearInterval(hcLoadBeat); return; } window.hcRun.beat = Date.now(); hcRunSave(); }, 5000);
+      document.addEventListener("visibilitychange", function () {
+        if (!hcLoading()) return;
+        var r = window.hcRun; if (document.hidden) { r.st = "bg"; r.bg++; } else r.st = "load"; r.beat = Date.now(); hcRunSave();
+      });
+      window.addEventListener("pagehide", function () { if (!hcLoading()) return; window.hcRun.st = "end"; window.hcRun.beat = Date.now(); hcRunSave(); });
+      var dataParts = 3;   // подставляет deploy_pages.sh
       function hcIdb(fn) {
         return new Promise(function (ok) {
           try {
@@ -216,7 +225,6 @@
         }).then((unityInstance) => {
                 if (config.dataUrl.indexOf("blob:") === 0) URL.revokeObjectURL(config.dataUrl);   // данные уже в памяти Unity
                 window.unityInstance = unityInstance;   // сохранение прогресса при сворачивании вкладки Safari (HC_Save)
-                if (hcCrashed) setTimeout(function () { try { unityInstance.SendMessage('HC_SAVE', 'OnCrashRecovered', ''); } catch (e) {} }, 4000);   // v1.5b: прошлый запуск закрылся аварийно
                 document.addEventListener('visibilitychange', function () { if (document.hidden && window.unityInstance) window.unityInstance.SendMessage('HC_SAVE', 'OnVisibility', 'hidden'); });
                 window.addEventListener('pagehide', function () { if (window.unityInstance) window.unityInstance.SendMessage('HC_SAVE', 'OnVisibility', 'hidden'); });
                 document.querySelector("#unity-fullscreen-button").onclick = () => {
