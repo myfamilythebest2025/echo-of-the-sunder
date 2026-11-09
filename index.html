@@ -15,7 +15,25 @@
       /* iPhone: игра внутри безопасной зоны — полоса опыта не уходит под «полоску домой», HUD не под чёлкой */
       #unity-container.unity-mobile{top:env(safe-area-inset-top);bottom:env(safe-area-inset-bottom);left:env(safe-area-inset-left);right:env(safe-area-inset-right);width:auto!important;height:auto!important;}
       /* v1.5: игра вертикальная — на широком экране (планшет, телефон боком) полоса 9:16 по центру, интерфейс не налезает */
-      #unity-container.unity-mobile.hc-pillar{left:calc(50% - var(--hc-w) / 2)!important;right:auto!important;width:var(--hc-w)!important;}</style>
+      #unity-container.unity-mobile.hc-pillar{left:calc(50% - var(--hc-w) / 2)!important;right:auto!important;width:var(--hc-w)!important;}
+      /* UI-2026 (стиль C): экран загрузки — ключевой арт, логотип, тлеющая полоса, проценты. Виден сразу, до загрузчика Unity */
+      #unity-fullscreen-container #unity-loading-container{position:absolute;left:0;top:0;right:0;bottom:0;width:auto;height:auto;backdrop-filter:none;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+        background:#0b0806 url(TemplateData/hc_bg.webp) center 30%/cover no-repeat;overflow:hidden}
+      #unity-loading-container::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(11,8,6,.55) 0%,rgba(11,8,6,0) 28%,rgba(11,8,6,0) 52%,rgba(11,8,6,.88) 82%,#0b0806 100%)}
+      #hc-logo{position:relative;width:min(88%,640px);margin-top:max(7vh,calc(env(safe-area-inset-top) + 28px));filter:drop-shadow(0 6px 18px rgba(0,0,0,.65));animation:hcIn .9s cubic-bezier(.2,.8,.2,1) both}
+      #unity-loading-bar{position:relative!important;left:auto!important;top:auto!important;transform:none!important;display:block!important;width:min(80%,520px);
+        margin-bottom:max(9vh,calc(env(safe-area-inset-bottom) + 44px));animation:hcIn .9s .25s cubic-bezier(.2,.8,.2,1) both}
+      #unity-logo{display:none!important}
+      #unity-progress-bar-empty{width:100%!important;height:24px!important;margin:0!important;border-radius:12px;background:#1d130c!important;border:2px solid #9a6a36;
+        box-shadow:inset 0 3px 7px rgba(0,0,0,.75),0 0 0 3px rgba(0,0,0,.45),0 6px 18px rgba(0,0,0,.5);overflow:hidden;box-sizing:border-box}
+      #unity-progress-bar-full{width:0;height:100%!important;margin:0!important;border-radius:10px;background:linear-gradient(180deg,#ffc070 0%,#ff8a24 50%,#c84a10 100%)!important;
+        box-shadow:0 0 14px rgba(255,138,36,.75);transition:width .25s ease-out}
+      #hc-status{margin-top:14px;display:flex;justify-content:space-between;align-items:baseline;color:#f3e9d8;letter-spacing:.03em;text-shadow:0 2px 4px #000;
+        font:600 16px/1.2 "Fira Sans Condensed","Roboto Condensed","Arial Narrow",system-ui,-apple-system,sans-serif}
+      #hc-pct{color:#ffc65c;font-weight:700;font-size:18px}
+      #hc-slogan{margin-top:10px;text-align:center;color:#cbb89a;font:500 14px/1.3 "Fira Sans Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;letter-spacing:.06em;opacity:.9}
+      @keyframes hcIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+      @media (prefers-reduced-motion:reduce){#hc-logo,#unity-loading-bar{animation:none}#unity-progress-bar-full{transition:none}}</style>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
   </head>
@@ -24,16 +42,19 @@
       <div id="unity-fullscreen-container">
         <canvas id="unity-canvas" width="960" height="600" tabindex="-1"></canvas>
         <div id="unity-loading-container">
+          <img id="hc-logo" src="TemplateData/hc_logo.webp" alt="Echo of the Sunder">
           <div id="unity-loading-bar">
             <div id="unity-logo"></div>
             <div id="unity-progress-bar-empty">
               <div id="unity-progress-bar-full"></div>
             </div>
+            <div id="hc-status"><span id="hc-text">Loading the Wastes…</span><span id="hc-pct">0%</span></div>
+            <div id="hc-slogan">One survivor. One road home.</div>
           </div>
         </div>
       </div>
       <div id="unity-warning"> </div>
-      <div id="unity-footer">
+      <div id="unity-footer" style="display:none">
         <div id="unity-logo-title-footer"></div>
         <div id="unity-fullscreen-button"></div>
         <div id="unity-build-title">Horde Capital</div>
@@ -69,7 +90,7 @@
       }
 
       var buildUrl = "Build";
-      var buildVer = "20261109011823";   // подставляет deploy_pages.sh: новая версия → браузер не берёт старую сборку из кэша
+      var buildVer = "20261109183727";   // подставляет deploy_pages.sh: новая версия → браузер не берёт старую сборку из кэша
       var loaderUrl = buildUrl + "/WebGL.loader.js?v=" + buildVer;
       var config = {
         arguments: [],
@@ -204,20 +225,29 @@
       }
       config.cacheControl = function (url) { return url.indexOf("blob:") === 0 ? "no-store" : "must-revalidate"; };
 
+      // UI-2026: полоса + проценты + что сейчас идёт (скачивание данных → запуск)
+      var hcBar = document.querySelector("#unity-progress-bar-full"), hcPct = document.querySelector("#hc-pct"), hcTxt = document.querySelector("#hc-text");
+      function hcProgress(p, phase) {
+        p = Math.max(0, Math.min(1, p)); hcBar.style.width = (100 * p).toFixed(1) + "%"; hcPct.textContent = Math.floor(100 * p) + "%";
+        hcTxt.textContent = phase || (p < 0.9 ? "Loading the Wastes…" : "Lighting the braziers…");
+      }
+      if (/[?&]demo(&|=|$)/.test(location.search)) {   // просмотр экрана загрузки без сборки: index.html?demo
+        var dp = 0; setInterval(function () { dp = Math.min(0.62, dp + 0.02); hcProgress(dp); }, 60);
+      } else {
       var script = document.createElement("script");
       script.src = loaderUrl;
       script.onload = () => {
         const loadingContainer = document.querySelector("#unity-loading-container");
         const progressBarFull = document.querySelector("#unity-progress-bar-full");
         const share = dataParts > 1 ? 0.9 : 0;   // доля полосы на скачивание частей данных
-        loadingContainer.style.display = "block";
+        loadingContainer.style.display = "flex";
 
-        hcData(function (p) { progressBarFull.style.width = 100 * share * p + "%"; }).then(function (dataUrl) {
+        hcData(function (p) { hcProgress(share * p, "Loading the Wastes…"); }).then(function (dataUrl) {
           config.dataUrl = dataUrl;
           return createUnityInstance(canvas, config, (progress) => {
           if (progress < 1) {
-            loadingContainer.style.display = "block";
-            progressBarFull.style.width = 100 * (share + (1 - share) * progress) + "%";
+            loadingContainer.style.display = "flex";
+            hcProgress(share + (1 - share) * progress, share + (1 - share) * progress < 0.9 ? null : "Lighting the braziers…");
           } else {
             loadingContainer.style.display = "none";
           }
@@ -237,6 +267,7 @@
             };
 
       document.body.appendChild(script);
+      }
 
     </script>
   </body>
